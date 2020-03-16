@@ -165,10 +165,14 @@ func (l *Lifecycle) newExport(repoName, runImage string, publish bool, launchCac
 
 func (l *Lifecycle) withLogLevel(args ...string) []string {
 	version := semver.MustParse(l.version)
-	if semver.MustParse("0.4.0").LessThan(version) {
+	if semver.MustParse("0.4.0").LessThan(version) { // Current lifecycle version is >= 0.4.0 (0.4.0 < lifecycle version)
 		if l.logger.IsVerbose() {
+			fmt.Println("########################## Lifecycle version:", l.version)
 			return append([]string{"-log-level", "debug"}, args...)
 		}
 	}
+
+	fmt.Println("########################## Log level args:", args)
+	fmt.Println("########################## Lifecycle version:", l.version)
 	return args
 }

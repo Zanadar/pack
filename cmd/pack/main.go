@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/heroku/color"
@@ -40,6 +41,7 @@ func main() {
 					logger.WantQuiet(flag)
 				}
 				if flag, err := fs.GetBool("verbose"); err == nil {
+					fmt.Println("Want verbose")
 					logger.WantVerbose(flag)
 				}
 				if flag, err := fs.GetBool("timestamps"); err == nil {
