@@ -52,6 +52,7 @@ type BuildOptions struct {
 	ContainerConfig    ContainerConfig
 	DefaultProcessType string
 	FileFilter         func(string) bool
+	Certs              CertConfig
 }
 
 type ProxyConfig struct {
@@ -63,6 +64,16 @@ type ProxyConfig struct {
 type ContainerConfig struct {
 	Network string
 	Volumes []string
+}
+
+type CertConfig struct {
+	both  []string
+	build []string
+	run   []string
+}
+
+func NewCertConfig([]string) CertConfig {
+	return certConfig{}
 }
 
 func (c *Client) Build(ctx context.Context, opts BuildOptions) error {
@@ -539,6 +550,7 @@ func ensureBPSupport(bpPath string) (err error) {
 	return nil
 }
 
+//TODO we can add certs here to begin with
 func (c *Client) createEphemeralBuilder(rawBuilderImage imgutil.Image, env map[string]string, order dist.Order, buildpacks []dist.Buildpack) (*builder.Builder, error) {
 	origBuilderName := rawBuilderImage.Name()
 	bldr, err := builder.New(rawBuilderImage, fmt.Sprintf("pack.local/builder/%x:latest", randString(10)))

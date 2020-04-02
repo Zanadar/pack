@@ -108,3 +108,9 @@ func WithRoot() PhaseConfigProviderOperation {
 		provider.ctrConf.User = "root"
 	}
 }
+
+func WithCerts(cfg certConfig) PhaseConfigProviderOperation {
+	return func(provider *PhaseConfigProvider) {
+
+	}
+}

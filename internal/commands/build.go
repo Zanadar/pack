@@ -35,6 +35,7 @@ type BuildFlags struct {
 	DescriptorPath     string
 	Volumes            []string
 	DefaultProcessType string
+	Certs              []string //--cert build:./path --cert run:./path --cert ./cert.crt (all phases)
 }
 
 func Build(logger logging.Logger, cfg config.Config, packClient PackClient) *cobra.Command {
@@ -76,7 +77,7 @@ func Build(logger logging.Logger, cfg config.Config, packClient PackClient) *cob
 				for _, bp := range descriptor.Build.Buildpacks {
 					if len(bp.URI) == 0 {
 						// there are several places through out the pack code where the "id@version" format is used.
-						// we should probably central this, but it's not clear where it belongs
+						// we should probably centralize this, but it's not clear where it belongs
 						buildpacks = append(buildpacks, fmt.Sprintf("%s@%s", bp.ID, bp.Version))
 					} else {
 						uri, err := paths.ToAbsolute(bp.URI, projectDescriptorDir)
@@ -106,6 +107,7 @@ func Build(logger logging.Logger, cfg config.Config, packClient PackClient) *cob
 				},
 				DefaultProcessType: flags.DefaultProcessType,
 				FileFilter:         fileFilter,
+				Certs:              pack.NewCertConfig(flags.Certs),
 			}); err != nil {
 				return err
 			}
@@ -133,6 +135,7 @@ func buildCommandFlags(cmd *cobra.Command, buildFlags *BuildFlags, cfg config.Co
 	cmd.Flags().StringVarP(&buildFlags.DescriptorPath, "descriptor", "d", "", "Path to the project descriptor file")
 	cmd.Flags().StringArrayVar(&buildFlags.Volumes, "volume", nil, "Mount host volume into the build container, in the form '<host path>:<target path>'. Target path will be prefixed with '/platform/'"+multiValueHelp("volume"))
 	cmd.Flags().StringVarP(&buildFlags.DefaultProcessType, "default-process", "D", "", "Set the default process type")
+	cmd.Flags().StringArrayVar(&buildFlags.Certs, "cert", nil, "Add certs to build and/or run images"+multiValueHelp("volume"))
 }
 
 func parseEnv(project project.Descriptor, envFiles []string, envVars []string) (map[string]string, error) {
