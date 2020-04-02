@@ -66,16 +66,6 @@ type ContainerConfig struct {
 	Volumes []string
 }
 
-type CertConfig struct {
-	both  []string
-	build []string
-	run   []string
-}
-
-func NewCertConfig([]string) CertConfig {
-	return certConfig{}
-}
-
 func (c *Client) Build(ctx context.Context, opts BuildOptions) error {
 	imageRef, err := c.parseTagReference(opts.Image)
 	if err != nil {

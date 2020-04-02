@@ -109,8 +109,9 @@ func WithRoot() PhaseConfigProviderOperation {
 	}
 }
 
-func WithCerts(cfg certConfig) PhaseConfigProviderOperation {
-	return func(provider *PhaseConfigProvider) {
-
-	}
-}
+//
+//func WithCerts(cfg pack.CertConfig) PhaseConfigProviderOperation {
+//	return func(provider *PhaseConfigProvider) {
+//
+//	}
+//}
