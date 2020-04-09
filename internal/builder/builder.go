@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/buildpacks/pack"
+
 	"github.com/BurntSushi/toml"
 	"github.com/buildpacks/imgutil"
 	"github.com/pkg/errors"
@@ -60,6 +62,7 @@ type Builder struct {
 	StackID              string
 	replaceOrder         bool
 	order                dist.Order
+	certs                pack.CertConfig
 }
 
 type orderTOML struct {
@@ -231,6 +234,10 @@ func (b *Builder) SetStack(stackConfig builder.StackConfig) {
 			Mirrors: stackConfig.RunImageMirrors,
 		},
 	}
+}
+
+func (b *Builder) SetCerts(c pack.CertConfig) {
+	b.certs = c
 }
 
 func (b *Builder) Save(logger logging.Logger) error {

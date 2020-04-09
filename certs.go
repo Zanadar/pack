@@ -1,6 +1,11 @@
 package pack
 
-import "strings"
+import (
+	"context"
+	"strings"
+
+	"github.com/docker/docker/api/types"
+)
 
 type CertConfig struct {
 	Build []string
@@ -28,4 +33,27 @@ func NewCertConfig(paths []string) CertConfig {
 
 	return cfg
 
+}
+
+func AddCerts(c Client, opts BuildOptions, bl, rn ) error {
+
+	c.docker.ContainerCreate()
+	c.docker.ContainerExecCreate()
+	c.docker.ContainerCommit()
+	build := opts.Builder.Image()
+	imageRef, err := c.parseTagReference(opts.Image)
+	run := c.resolveRunImage()
+	// Add certs to build image
+	// find build image -> this is builder base-image
+	// mounts certs in -> param
+	// execute hook for every cert
+	// clean up temp certs path
+	// save new certs layer + add to image -> return
+	// add certs to run
+
+	ephemeralBuilder, err := c.createEphemeralBuilder(rawBuilderImage, opts.Env, order, fetchedBPs)
+	if err != nil {
+		return err
+	}
+	defer c.docker.ImageRemove(context.Background(), ephemeralBuilder.Name(), types.ImageRemoveOptions{Force: true})
 }
