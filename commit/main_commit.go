@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -11,9 +12,9 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 
-	"github.com/docker/docker/pkg/archive"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
 
+	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/stdcopy"
 
 	"github.com/docker/docker/api/types"
@@ -123,6 +124,12 @@ func DoMain() {
 	}
 
 	fmt.Println(done)
+}
+
+func ExtendImage(cli *client.Client, ctx context.Context, createResp container.ContainerCreateCreatedBody, kindPath string, tarToml io.ReadCloser) {
+	if err := cli.CopyToContainer(ctx, createResp.ID, kindPath, tarToml, types.CopyToContainerOptions{}); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func main() {

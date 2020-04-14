@@ -191,7 +191,7 @@ func testBuild(t *testing.T, when spec.G, it spec.S) {
 
 	when("#Build", func() {
 		when("Image option", func() {
-			it("is required", func() {
+			it.Focus("is required", func() {
 				h.AssertError(t, subject.Build(context.TODO(), BuildOptions{
 					Image:   "",
 					Builder: builderName,

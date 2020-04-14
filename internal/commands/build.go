@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/pkg/errors"
 	ignore "github.com/sabhiram/go-gitignore"
 
 	"github.com/pkg/errors"

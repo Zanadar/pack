@@ -1,4 +1,4 @@
-package pack
+package extend
 
 import (
 	"testing"

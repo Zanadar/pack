@@ -1,9 +1,9 @@
 package pack
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"math/rand"
 	"net/url"
 	"os"
 	"path"
@@ -11,6 +11,11 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/buildpacks/imgutil/local"
+
+	"github.com/BurntSushi/toml"
+	"github.com/buildpacks/pack/extend"
 
 	"github.com/buildpacks/imgutil"
 	"github.com/docker/docker/api/types"
@@ -26,10 +31,13 @@ import (
 	"github.com/buildpacks/pack/internal/buildpack"
 	"github.com/buildpacks/pack/internal/buildpackage"
 	"github.com/buildpacks/pack/internal/dist"
+	"github.com/buildpacks/pack/internal/image"
 	"github.com/buildpacks/pack/internal/paths"
 	"github.com/buildpacks/pack/internal/stack"
 	"github.com/buildpacks/pack/internal/stringset"
 	"github.com/buildpacks/pack/internal/style"
+
+	darchive "github.com/docker/docker/pkg/archive"
 )
 
 type Lifecycle interface {
@@ -112,6 +120,14 @@ func (c *Client) Build(ctx context.Context, opts BuildOptions) error {
 
 	if err := c.validateMixins(fetchedBPs, bldr, runImageName, runMixins); err != nil {
 		return errors.Wrap(err, "validating stack mixins")
+	}
+
+	// Do we have extension certs? If so, extend the builder image before creating an ephemeral builder
+	if len(opts.Certs.Build) > 0 {
+		rawBuilderImage, err = c.extendBuilder(ctx, rawBuilderImage, opts.Certs)
+		if err != nil {
+			return err
+		}
 	}
 
 	ephemeralBuilder, err := c.createEphemeralBuilder(rawBuilderImage, opts.Env, order, fetchedBPs)
@@ -540,10 +556,9 @@ func ensureBPSupport(bpPath string) (err error) {
 	return nil
 }
 
-//TODO we can add certs here to begin with
 func (c *Client) createEphemeralBuilder(rawBuilderImage imgutil.Image, env map[string]string, order dist.Order, buildpacks []dist.Buildpack) (*builder.Builder, error) {
 	origBuilderName := rawBuilderImage.Name()
-	bldr, err := builder.New(rawBuilderImage, fmt.Sprintf("pack.local/builder/%x:latest", randString(10)))
+	bldr, err := builder.New(rawBuilderImage, image.RandomName("pack.local/builder/%x:latest", 10))
 	if err != nil {
 		return nil, errors.Wrapf(err, "invalid builder %s", style.Symbol(origBuilderName))
 	}
@@ -565,12 +580,33 @@ func (c *Client) createEphemeralBuilder(rawBuilderImage imgutil.Image, env map[s
 	return bldr, nil
 }
 
-func randString(n int) string {
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = 'a' + byte(rand.Intn(26))
+// TODO at the moment, this method only extends the builder image (really the build image) with the build certs
+func (c *Client) extendBuilder(ctx context.Context, rawBuildImg imgutil.Image, certs extend.CertConfig) (extBuilder imgutil.Image, err error) {
+	newName, err := c.extendImage(ctx, rawBuildImg, "build", certs.Build)
+	if err != nil {
+		return nil, err
 	}
-	return string(b)
+
+	return local.NewImage(newName, c.docker, local.FromBaseImage(newName))
+}
+
+func (c *Client) extendImage(ctx context.Context, img imgutil.Image, kind string, certs []string) (newName string, err error) {
+	cfg := extend.Config{
+		Certs: certs,
+	}
+
+	buf := &bytes.Buffer{}
+	err = toml.NewEncoder(buf).Encode(cfg)
+	if err != nil {
+		return "", err
+	}
+
+	tt, err := darchive.NewTempArchive(buf, os.TempDir())
+	if err != nil {
+		return "", err
+	}
+
+	return extend.Image(ctx, c.docker, img.Name(), kind, tt)
 }
 
 func buildPlatformVolumes(volumes []string) ([]string, error) {

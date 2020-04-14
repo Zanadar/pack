@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/buildpacks/pack"
+	"github.com/buildpacks/pack/extend"
 
 	"github.com/BurntSushi/toml"
 	"github.com/buildpacks/imgutil"
@@ -62,7 +62,7 @@ type Builder struct {
 	StackID              string
 	replaceOrder         bool
 	order                dist.Order
-	certs                pack.CertConfig
+	certs                extend.CertConfig
 }
 
 type orderTOML struct {
@@ -236,7 +236,7 @@ func (b *Builder) SetStack(stackConfig builder.StackConfig) {
 	}
 }
 
-func (b *Builder) SetCerts(c pack.CertConfig) {
+func (b *Builder) SetCerts(c extend.CertConfig) {
 	b.certs = c
 }
 
