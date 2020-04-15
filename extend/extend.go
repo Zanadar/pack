@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/buildpacks/pack/logging"
+
 	"github.com/buildpacks/pack/internal/image"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -30,9 +32,23 @@ type Config struct {
 	Certs []string `toml:certs,omitempty`
 }
 
+type ImageExtender struct {
+	Kind       string
+	ExtendToml io.ReadCloser
+	Client     client.CommonAPIClient
+	BaseImage  string
+	Logger     logging.Logger
+}
+
 // Image runs a container from an image, calling the extend binary of that image, passing along extend.toml
 // The method returns the name of the extended image
-func Image(ctx context.Context, cli client.CommonAPIClient, baseImgName, kind string, tarToml io.ReadCloser) (newName string, err error) {
+// TODO this is quite similair to a phase...but we haven't figured out how to build a common abstraction
+func (i ImageExtender) Extend(ctx context.Context) (newName string, err error) {
+	cli := i.Client
+	baseImgName := i.BaseImage
+	kind := i.Kind
+	tarToml := i.ExtendToml
+
 	kindPath := filepath.Join(extendPathBase, kind)
 	extendBin := filepath.Join(kindPath, "extend")
 	extendToml := filepath.Join(kindPath, "extend.toml")
