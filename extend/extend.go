@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+
 	"github.com/buildpacks/pack/logging"
 
 	"github.com/buildpacks/pack/internal/image"
@@ -25,7 +27,8 @@ var (
 )
 
 const (
-	root = "0"
+	root           = "0"
+	extendBaseName = "pack.local/extend"
 )
 
 type Config struct {
@@ -33,11 +36,23 @@ type Config struct {
 }
 
 type ImageExtender struct {
-	Kind       string
-	ExtendToml io.ReadCloser
-	Client     client.CommonAPIClient
-	BaseImage  string
-	Logger     logging.Logger
+	Kind          string
+	ExtendToml    io.Reader // Must be a reader of a tar
+	Client        client.CommonAPIClient
+	BaseImageName string
+	Logger        logging.Logger
+	LogCopy       func(dstout, dsterr io.Writer, src io.Reader) (written int64, err error) // Usually stdcopy.StdCopy
+}
+
+func NewImageExtender(kind string, extendToml io.Reader, client client.CommonAPIClient, baseImage string, logger logging.Logger, logCopy func(dstout, dsterr io.Writer, src io.Reader) (written int64, err error)) *ImageExtender {
+	return &ImageExtender{
+		Kind:          kind,
+		ExtendToml:    extendToml,
+		Client:        client,
+		BaseImageName: baseImage,
+		Logger:        logger,
+		LogCopy:       logCopy,
+	}
 }
 
 // Image runs a container from an image, calling the extend binary of that image, passing along extend.toml
@@ -45,32 +60,34 @@ type ImageExtender struct {
 // TODO this is quite similair to a phase...but we haven't figured out how to build a common abstraction
 func (i ImageExtender) Extend(ctx context.Context) (newName string, err error) {
 	cli := i.Client
-	baseImgName := i.BaseImage
 	kind := i.Kind
-	tarToml := i.ExtendToml
 
 	kindPath := filepath.Join(extendPathBase, kind)
 	extendBin := filepath.Join(kindPath, "extend")
 	extendToml := filepath.Join(kindPath, "extend.toml")
 
-	createResp, err := cli.ContainerCreate(ctx, &container.Config{
-		Image: baseImgName,
+	containerConfig := container.Config{
+		Image: i.BaseImageName,
 		User:  root,
 		Cmd:   []string{extendBin, extendToml},
-	}, nil, nil, image.RandomName(fmt.Sprintf("pack.local/extend/container/%s/%%s", kind), 10))
+	}
+
+	createResp, err := cli.ContainerCreate(
+		ctx,
+		&containerConfig,
+		nil,
+		nil,
+		image.RandomName(fmt.Sprintf("%s/container/%s/%%s", extendBaseName, kind), 10))
 	if err != nil {
 		return "", err
 	}
+
 	defer cli.ContainerRemove(ctx, createResp.ID, types.ContainerRemoveOptions{Force: true})
 
-	// Its easier to just directly copy to toml vs copying the certs onto an ephemeral volume
-	// Copying to a volume requires creating a container and copying anyway (https://github.com/moby/moby/issues/25245)
-	if err := cli.CopyToContainer(ctx, createResp.ID, kindPath, tarToml, types.CopyToContainerOptions{}); err != nil {
+	if err := cli.CopyToContainer(ctx, createResp.ID, kindPath, i.ExtendToml, types.CopyToContainerOptions{}); err != nil {
 		return "", err
 	}
 
-	// if we have an error here, we likely want to see the logs below
-	// TODO figure out the api for passing logs
 	if err := cli.ContainerStart(ctx, createResp.ID, types.ContainerStartOptions{}); err != nil {
 		return "", err
 	}
@@ -84,14 +101,14 @@ func (i ImageExtender) Extend(ctx context.Context) (newName string, err error) {
 	case <-statusCh:
 	}
 
-	//out, err := cli.ContainerLogs(ctx, createResp.ID, types.ContainerLogsOptions{ShowStdout: true})
-	//if err != nil {
-	//	return "", err
-	//}
-	//
-	//stdcopy.StdCopy(os.Stdout, os.Stderr, out) // TODO debug
+	out, err := cli.ContainerLogs(ctx, createResp.ID, types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true})
+	if err != nil {
+		return "", err
+	}
 
-	extendedName := image.RandomName(fmt.Sprintf("pack.local/extend/commit/%s/%%s", kind), 10)
+	i.LogCopy(logging.GetWriterForLevel(i.Logger, logging.InfoLevel), logging.GetWriterForLevel(i.Logger, logging.ErrorLevel), out)
+
+	extendedName := image.RandomName(fmt.Sprintf("%s/commit/%s/%%s", extendBaseName, kind), 10)
 	_, err = cli.ContainerCommit(ctx, createResp.ID,
 		types.ContainerCommitOptions{Reference: extendedName})
 	if err != nil {
@@ -100,45 +117,46 @@ func (i ImageExtender) Extend(ctx context.Context) (newName string, err error) {
 
 	defer cli.ImageRemove(ctx, extendedName, types.ImageRemoveOptions{Force: true})
 
-	//fmt.Println(commitResp.ID) //TODO debug
-
-	newTag, err := shiftLastLayer(cli, extendedName, baseImgName)
+	extendImage, err := getImage(cli, extendedName)
 	if err != nil {
 		return "", err
 	}
 
-	//fmt.Println(logs) // TODO debug from shifting layers
+	baseImage, err := getImage(cli, i.BaseImageName)
+	if err != nil {
+		return "", err
+	}
+
+	newTag, err := shiftLastLayer(cli, extendImage, baseImage)
+	if err != nil {
+		return "", err
+	}
+	//
+	////fmt.Println(logs) // TODO debug from shifting layers
 
 	return newTag, nil
 }
 
+func getImage(cli client.CommonAPIClient, imgName string) (v1.Image, error) {
+	ref, err := name.ParseReference(imgName)
+	if err != nil {
+		return nil, err
+	}
+
+	return daemon.Image(ref, daemon.WithClient(cli))
+
+}
+
 // we need to move only the layer created by the execution of the extension binary onto the initial image
-// this is because running a container and committing also mutates the Config, which we don't want
-func shiftLastLayer(cli client.CommonAPIClient, fromImg, toImg string) (string, error) {
-	extended, err := name.ParseReference(fromImg)
-	if err != nil {
-		return "", err
-	}
-	extendImg, err := daemon.Image(extended, daemon.WithClient(cli))
-	if err != nil {
-		return "", err
-	}
+// this is because running a container and committing also mutates the ContainerCreateCalledWithConfig, which we don't want
+func shiftLastLayer(cli client.CommonAPIClient, fromImg, toImg v1.Image) (string, error) {
 
-	base, err := name.ParseReference(toImg)
-	if err != nil {
-		return "", err
-	}
-	buildImage, err := daemon.Image(base, daemon.WithClient(cli), daemon.WithBufferedOpener())
-	if err != nil {
-		return "", err
-	}
-
-	extensionLayers, err := extendImg.Layers()
+	extensionLayers, err := fromImg.Layers()
 	if err != nil {
 		return "", err
 	}
 	topLayer := extensionLayers[len(extensionLayers)-1] // Retrieve the last layer of the image
-	buildImage, err = mutate.AppendLayers(buildImage, topLayer)
+	toImg, err = mutate.AppendLayers(toImg, topLayer)
 	if err != nil {
 		return "", err
 	}
@@ -147,7 +165,7 @@ func shiftLastLayer(cli client.CommonAPIClient, fromImg, toImg string) (string, 
 		return "", err
 	}
 
-	_, err = daemon.Write(extendedTag, buildImage)
+	_, err = daemon.Write(extendedTag, toImg)
 	if err != nil {
 		return "", err
 	}
