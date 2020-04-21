@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+config=$1
+
+printf "@@@@@@@@@@@@@@@ Extending\nConfig:\n"
+printf "%s\n" "${config}"

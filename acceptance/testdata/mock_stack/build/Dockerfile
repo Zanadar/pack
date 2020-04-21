@@ -11,4 +11,6 @@ RUN apt-get update && apt-get -yq install netcat
 LABEL io.buildpacks.stack.id=pack.test.stack
 LABEL io.buildpacks.stack.mixins="[\"mixinA\", \"build:mixinTwo\", \"netcat\", \"mixin3\"]"
 
+COPY ./extend /cnb/image/build/extend
+
 USER pack
