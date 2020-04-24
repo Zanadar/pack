@@ -90,6 +90,11 @@ func Build(logger logging.Logger, cfg config.Config, packClient PackClient) *cob
 				}
 			}
 
+			certConfig, err := extend.NewCertConfig(flags.Certs)
+			if err != nil {
+				return err
+			}
+
 			if err := packClient.Build(cmd.Context(), pack.BuildOptions{
 				AppPath:           flags.AppPath,
 				Builder:           flags.Builder,
@@ -108,7 +113,7 @@ func Build(logger logging.Logger, cfg config.Config, packClient PackClient) *cob
 				},
 				DefaultProcessType: flags.DefaultProcessType,
 				FileFilter:         fileFilter,
-				Certs:              pack.NewCertConfig(flags.Certs),
+				Certs:              certConfig,
 			}); err != nil {
 				return err
 			}

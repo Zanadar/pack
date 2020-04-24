@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/buildpacks/imgutil/local"
 
@@ -36,8 +37,6 @@ import (
 	"github.com/buildpacks/pack/internal/stack"
 	"github.com/buildpacks/pack/internal/stringset"
 	"github.com/buildpacks/pack/internal/style"
-
-	darchive "github.com/docker/docker/pkg/archive"
 )
 
 type Lifecycle interface {
@@ -60,7 +59,7 @@ type BuildOptions struct {
 	ContainerConfig    ContainerConfig
 	DefaultProcessType string
 	FileFilter         func(string) bool
-	Certs              CertConfig
+	Certs              extend.CertConfig
 }
 
 type ProxyConfig struct {
@@ -590,7 +589,7 @@ func (c *Client) extendBuilder(ctx context.Context, rawBuildImg imgutil.Image, c
 	return local.NewImage(newName, c.docker, local.FromBaseImage(newName))
 }
 
-func (c *Client) extendImage(ctx context.Context, img imgutil.Image, kind string, certs []string) (newName string, err error) {
+func (c *Client) extendImage(ctx context.Context, img imgutil.Image, kind string, certs extend.Certs) (newName string, err error) {
 	cfg := extend.Config{
 		Certs: certs,
 	}
@@ -601,12 +600,14 @@ func (c *Client) extendImage(ctx context.Context, img imgutil.Image, kind string
 		return "", err
 	}
 
-	tt, err := darchive.NewTempArchive(buf, os.TempDir())
-	if err != nil {
-		return "", err
-	}
+	tr := archive.TarBuilder{}
+	tr.AddFile("extend.toml", 0777, time.Now(), buf.Bytes())
 
-	return extend.Image(ctx, c.docker, img.Name(), kind, tt)
+	//testhelpers.CreateSingleFileTar("extend.toml", buf.s)
+
+	extender := extend.DefaultImageExtender(kind, tr.Reader(), c.docker, img.Name(), c.logger)
+	//extender := extend.DefaultImageExtender(kind, nil, c.docker, img.Name(), c.logger)
+	return extender.Extend(ctx)
 }
 
 func buildPlatformVolumes(volumes []string) ([]string, error) {

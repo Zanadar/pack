@@ -740,7 +740,7 @@ func testAcceptance(
 						}
 					})
 
-					it("supports building app from a zip file", func() {
+					it.Focus("supports building app from a zip file", func() {
 						appPath := filepath.Join("testdata", "mock_app.zip")
 						output := h.Run(t, subjectPack("build", repoName, "-p", appPath))
 						h.AssertContains(t, output, fmt.Sprintf("Successfully built image '%s'", repoName))
@@ -1345,6 +1345,23 @@ include = [ "*.jar", "media/mountain.jpg", "media/person.png" ]
 								h.AssertContains(t, output, "mountain.jpg")
 								h.AssertContains(t, output, "person.png")
 							})
+						})
+					})
+
+					when("--cert", func() {
+						it.Focus("extends the build image witht he provided certs", func() {
+							certs, err := filepath.Glob(filepath.Join("testdata", "certs", "*.crt"))
+							h.AssertNil(t, err)
+							certArgs := []string{repoName, fmt.Sprintf("--cert=%s", strings.Join(certs, ","))}
+
+							output := h.Run(t, subjectPack("build", certArgs...))
+							h.AssertContains(t, output, "@@@@@@@@@@@@@@@ Extending")
+
+							imgId, err := imgIDForRepoName(repoName)
+							if err != nil {
+								t.Fatal(err)
+							}
+							defer h.DockerRmi(dockerCli, imgId)
 						})
 					})
 				})

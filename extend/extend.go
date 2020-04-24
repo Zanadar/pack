@@ -7,6 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/pkg/errors"
+
+	"github.com/docker/docker/pkg/stdcopy"
+
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 
 	"github.com/buildpacks/pack/logging"
@@ -28,11 +32,14 @@ var (
 
 const (
 	root           = "0"
-	extendBaseName = "pack.local/extend"
+	extendBaseName = "pack.local_extend"
 )
 
+type Certs []string
+
+// Struct used to store exend configuration on disk as "extend.toml"
 type Config struct {
-	Certs []string `toml:certs,omitempty`
+	Certs []string `toml:"certs,omitempty"`
 }
 
 type ImageExtender struct {
@@ -44,21 +51,21 @@ type ImageExtender struct {
 	LogCopy       func(dstout, dsterr io.Writer, src io.Reader) (written int64, err error) // Usually stdcopy.StdCopy
 }
 
-func NewImageExtender(kind string, extendToml io.Reader, client client.CommonAPIClient, baseImage string, logger logging.Logger, logCopy func(dstout, dsterr io.Writer, src io.Reader) (written int64, err error)) *ImageExtender {
+func DefaultImageExtender(kind string, extendToml io.Reader, client client.CommonAPIClient, baseImage string, logger logging.Logger) *ImageExtender {
 	return &ImageExtender{
 		Kind:          kind,
 		ExtendToml:    extendToml,
 		Client:        client,
 		BaseImageName: baseImage,
 		Logger:        logger,
-		LogCopy:       logCopy,
+		LogCopy:       stdcopy.StdCopy,
 	}
 }
 
 // Image runs a container from an image, calling the extend binary of that image, passing along extend.toml
 // The method returns the name of the extended image
 // TODO this is quite similair to a phase...but we haven't figured out how to build a common abstraction
-func (i ImageExtender) Extend(ctx context.Context) (newName string, err error) {
+func (i *ImageExtender) Extend(ctx context.Context) (newName string, err error) {
 	cli := i.Client
 	kind := i.Kind
 
@@ -77,7 +84,7 @@ func (i ImageExtender) Extend(ctx context.Context) (newName string, err error) {
 		&containerConfig,
 		nil,
 		nil,
-		image.RandomName(fmt.Sprintf("%s/container/%s/%%s", extendBaseName, kind), 10))
+		image.RandomName(fmt.Sprintf("%s_container_%s_%%s", extendBaseName, kind), 10))
 	if err != nil {
 		return "", err
 	}
@@ -127,7 +134,7 @@ func (i ImageExtender) Extend(ctx context.Context) (newName string, err error) {
 		return "", err
 	}
 
-	newTag, err := shiftLastLayer(cli, extendImage, baseImage)
+	newTag, err := shiftLastLayer(extendImage, baseImage, i.BaseImageName)
 	if err != nil {
 		return "", err
 	}
@@ -144,13 +151,11 @@ func getImage(cli client.CommonAPIClient, imgName string) (v1.Image, error) {
 	}
 
 	return daemon.Image(ref, daemon.WithClient(cli))
-
 }
 
 // we need to move only the layer created by the execution of the extension binary onto the initial image
 // this is because running a container and committing also mutates the ContainerCreateCalledWithConfig, which we don't want
-func shiftLastLayer(cli client.CommonAPIClient, fromImg, toImg v1.Image) (string, error) {
-
+func shiftLastLayer(fromImg, toImg v1.Image, baseName string) (string, error) {
 	extensionLayers, err := fromImg.Layers()
 	if err != nil {
 		return "", err
@@ -160,9 +165,10 @@ func shiftLastLayer(cli client.CommonAPIClient, fromImg, toImg v1.Image) (string
 	if err != nil {
 		return "", err
 	}
-	extendedTag, err := name.NewTag(fmt.Sprintf("%s/extended", fromImg))
+
+	extendedTag, err := name.NewTag(fmt.Sprintf("%s-extended", baseName))
 	if err != nil {
-		return "", err
+		return "", errors.Wrapf(err, "problem tagging %s", baseName)
 	}
 
 	_, err = daemon.Write(extendedTag, toImg)
