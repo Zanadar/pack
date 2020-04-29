@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -112,8 +113,8 @@ func (i *ImageExtender) Extend(ctx context.Context) (newName string, err error) 
 	if err != nil {
 		return "", err
 	}
-
-	i.LogCopy(logging.GetWriterForLevel(i.Logger, logging.InfoLevel), logging.GetWriterForLevel(i.Logger, logging.ErrorLevel), out)
+	// TODO We're discarding STDERR. Probably a bad idea?
+	i.LogCopy(logging.GetWriterForLevel(i.Logger, logging.InfoLevel), ioutil.Discard, out)
 
 	extendedName := image.RandomName(fmt.Sprintf("%s/commit/%s/%%s", extendBaseName, kind), 10)
 	_, err = cli.ContainerCommit(ctx, createResp.ID,
@@ -122,7 +123,7 @@ func (i *ImageExtender) Extend(ctx context.Context) (newName string, err error) 
 		return "", err
 	}
 
-	defer cli.ImageRemove(ctx, extendedName, types.ImageRemoveOptions{Force: true})
+	//defer cli.ImageRemove(ctx, extendedName, types.ImageRemoveOptions{Force: true})
 
 	extendImage, err := getImage(cli, extendedName)
 	if err != nil {
@@ -134,12 +135,11 @@ func (i *ImageExtender) Extend(ctx context.Context) (newName string, err error) 
 		return "", err
 	}
 
-	newTag, err := shiftLastLayer(extendImage, baseImage, i.BaseImageName)
+	logs, newTag, err := shiftLastLayer(extendImage, baseImage, i.BaseImageName)
+	i.Logger.Info(logs)
 	if err != nil {
 		return "", err
 	}
-	//
-	////fmt.Println(logs) // TODO debug from shifting layers
 
 	return newTag, nil
 }
@@ -155,26 +155,27 @@ func getImage(cli client.CommonAPIClient, imgName string) (v1.Image, error) {
 
 // we need to move only the layer created by the execution of the extension binary onto the initial image
 // this is because running a container and committing also mutates the ContainerCreateCalledWithConfig, which we don't want
-func shiftLastLayer(fromImg, toImg v1.Image, baseName string) (string, error) {
+func shiftLastLayer(fromImg, toImg v1.Image, baseName string) (logs, newName string, err error) {
 	extensionLayers, err := fromImg.Layers()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	topLayer := extensionLayers[len(extensionLayers)-1] // Retrieve the last layer of the image
 	toImg, err = mutate.AppendLayers(toImg, topLayer)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	extendedTag, err := name.NewTag(fmt.Sprintf("%s-extended", baseName))
+
 	if err != nil {
-		return "", errors.Wrapf(err, "problem tagging %s", baseName)
+		return "", "", errors.Wrapf(err, "problem tagging %s", baseName)
 	}
 
-	_, err = daemon.Write(extendedTag, toImg)
+	logs, err = daemon.Write(extendedTag, toImg)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	return extendedTag.Name(), nil
+	return logs, extendedTag.Name(), nil
 }

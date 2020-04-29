@@ -13,13 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildpacks/imgutil/local"
-
 	"github.com/BurntSushi/toml"
 	"github.com/buildpacks/pack/extend"
 
 	"github.com/buildpacks/imgutil"
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/volume/mounts"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/pkg/errors"
@@ -123,17 +120,29 @@ func (c *Client) Build(ctx context.Context, opts BuildOptions) error {
 
 	// Do we have extension certs? If so, extend the builder image before creating an ephemeral builder
 	if len(opts.Certs.Build) > 0 {
+
+		//inspect, _, _ := c.docker.ImageInspectWithRaw(ctx, rawBuilderImage.Name())
+		//fmt.Println(">>>>>>>>>>>>>> Before")
+		//spew.Dump(inspect)
 		rawBuilderImage, err = c.extendBuilder(ctx, rawBuilderImage, opts.Certs)
 		if err != nil {
 			return err
 		}
+		rawBuilderImage.SetLabel("io.buildpacks.metadata.extended", "********************************************>>>>>>>>>>>>>>>>>>>>>>>>")
+
+		// THEORY: the image is moving from the test registry into the local daemon. Why does that not work?
+		//newInspect, raw, _ := c.docker.ImageInspectWithRaw(ctx, rawBuilderImage.Name())
+		//fmt.Println(">>>>>>>>>>>>>> After")
+		//spew.Dump(newInspect)
+		//spew.Dump(raw)
+
 	}
 
 	ephemeralBuilder, err := c.createEphemeralBuilder(rawBuilderImage, opts.Env, order, fetchedBPs)
 	if err != nil {
 		return err
 	}
-	defer c.docker.ImageRemove(context.Background(), ephemeralBuilder.Name(), types.ImageRemoveOptions{Force: true})
+	//defer c.docker.ImageRemove(context.Background(), ephemeralBuilder.Name(), types.ImageRemoveOptions{Force: true})
 
 	lcPlatformAPIVersion := ephemeralBuilder.LifecycleDescriptor().API.PlatformVersion
 	supportsPlatform := false
@@ -586,7 +595,7 @@ func (c *Client) extendBuilder(ctx context.Context, rawBuildImg imgutil.Image, c
 		return nil, err
 	}
 
-	return local.NewImage(newName, c.docker, local.FromBaseImage(newName))
+	return c.imageFetcher.Fetch(ctx, newName, true, false)
 }
 
 func (c *Client) extendImage(ctx context.Context, img imgutil.Image, kind string, certs extend.Certs) (newName string, err error) {
@@ -603,10 +612,7 @@ func (c *Client) extendImage(ctx context.Context, img imgutil.Image, kind string
 	tr := archive.TarBuilder{}
 	tr.AddFile("extend.toml", 0777, time.Now(), buf.Bytes())
 
-	//testhelpers.CreateSingleFileTar("extend.toml", buf.s)
-
 	extender := extend.DefaultImageExtender(kind, tr.Reader(), c.docker, img.Name(), c.logger)
-	//extender := extend.DefaultImageExtender(kind, nil, c.docker, img.Name(), c.logger)
 	return extender.Extend(ctx)
 }
 

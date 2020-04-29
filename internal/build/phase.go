@@ -2,10 +2,13 @@ package build
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"runtime"
 	"sync"
+
+	"github.com/davecgh/go-spew/spew"
 
 	"github.com/docker/docker/api/types"
 	dcontainer "github.com/docker/docker/api/types/container"
@@ -35,7 +38,8 @@ func (p *Phase) Run(ctx context.Context) error {
 
 	p.ctr, err = p.docker.ContainerCreate(ctx, p.ctrConf, p.hostConf, nil, "")
 	if err != nil {
-		return errors.Wrapf(err, "failed to create '%s' container", p.name)
+		fmt.Println("****************************  ENV", os.Getenv("DOCKER_HOST"))
+		return errors.Wrapf(err, "failed to create '%s' container\n\n\n%s\n\n", p.name, spew.Sdump(p.ctrConf, p.hostConf))
 	}
 
 	p.appOnce.Do(func() {

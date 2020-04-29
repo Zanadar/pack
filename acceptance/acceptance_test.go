@@ -75,7 +75,8 @@ func TestAcceptance(t *testing.T) {
 	h.AssertNil(t, err)
 
 	registryConfig = h.RunRegistry(t)
-	defer registryConfig.StopRegistry(t)
+	fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>> Registry Config:", registryConfig)
+	//defer registryConfig.StopRegistry(t)
 
 	testWriter := testWriter{t}
 	inputPathsManager, err := NewInputPathsManager(logging.NewLogWithWriters(&testWriter, &testWriter))
@@ -570,7 +571,7 @@ func testAcceptance(
 				})
 				h.AssertNil(t, err)
 				suiteManager.RegisterCleanUp("clean-"+key, func() error {
-					return h.DockerRmi(dockerCli, value)
+					return nil
 				})
 
 				builderName = value
@@ -740,7 +741,7 @@ func testAcceptance(
 						}
 					})
 
-					it.Focus("supports building app from a zip file", func() {
+					it("supports building app from a zip file", func() {
 						appPath := filepath.Join("testdata", "mock_app.zip")
 						output := h.Run(t, subjectPack("build", repoName, "-p", appPath))
 						h.AssertContains(t, output, fmt.Sprintf("Successfully built image '%s'", repoName))
@@ -1097,13 +1098,13 @@ func testAcceptance(
 							h.AssertNil(t, os.Unsetenv("ENV2_CONTENTS"))
 						})
 
-						it("provides the env vars to the build and detect steps", func() {
+						it.Focus("provides the env vars to the build and detect steps", func() {
 							output := h.Run(t, subjectPack(
 								"build", repoName,
 								"-p", filepath.Join("testdata", "mock_app"),
 								"--env", "DETECT_ENV_BUILDPACK=true",
 								"--env", `ENV1_CONTENTS="Env1 Layer Contents From Command Line"`,
-								"--env", "ENV2_CONTENTS",
+								"--env", "ENV2_asdasdCONTENTS",
 							))
 
 							h.AssertContains(t, output, fmt.Sprintf("Successfully built image '%s'", repoName))
@@ -1346,13 +1347,19 @@ include = [ "*.jar", "media/mountain.jpg", "media/person.png" ]
 								h.AssertContains(t, output, "person.png")
 							})
 						})
-					})
+					}) // TODO certs here too?
 
 					when("--cert", func() {
 						it.Focus("extends the build image witht he provided certs", func() {
+							// TODO we probably want to test that when a stack satisfies the contract, we do the right thing
+							// ie save the layer and add it to the builder
 							certs, err := filepath.Glob(filepath.Join("testdata", "certs", "*.crt"))
 							h.AssertNil(t, err)
-							certArgs := []string{repoName, fmt.Sprintf("--cert=%s", strings.Join(certs, ","))}
+							certArgs := []string{
+								repoName,
+								"-p", filepath.Join("testdata", "mock_app"),
+								fmt.Sprintf("--cert=%s", strings.Join(certs, ",")),
+							}
 
 							output := h.Run(t, subjectPack("build", certArgs...))
 							h.AssertContains(t, output, "@@@@@@@@@@@@@@@ Extending")
